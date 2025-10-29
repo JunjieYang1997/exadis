@@ -716,13 +716,8 @@ class SimulateNetwork:
     def save_old_nodes(self, N: DisNetManager, state: dict):
         """save_old_nodes: save current nodal positions
         """
-        if self.exadis_plastic_strain:
-            # if exadis is calculating plastic strain (much faster)
-            # then we don't need to save positions here
-            state["oldnodes_dict"] = None
-        else:
-            # TO DO: get_nodes_data() function from DisNetManager
-            state["oldnodes_dict"] = N.get_disnet(ExaDisNet).get_nodes_data()
+        # TO DO: get_nodes_data() function from DisNetManager
+        state["oldnodes_dict"] = N.get_disnet(ExaDisNet).get_nodes_data()
         return state
     
     def plastic_strain(self, N: DisNetManager, state: dict):
