@@ -441,6 +441,45 @@ ForceBind make_force(Params& params, typename F::Params& fparams, Cell cell)
     return ForceBind(force, model, params, cutoff);
 }
 
+ForceBind make_force_global(Params& params, py::dict& fparams, Cell cell)
+{
+    params.check_params();
+    System* system = make_system(new SerialDisNet(cell), Crystal(params.crystal), params);
+    
+    ForceType::GLOBAL_MODEL* force = exadis_new<ForceType::GLOBAL_MODEL>();
+    for (auto item : fparams) {
+        std::string key = item.first.cast<std::string>();
+        bool matched = false;
+
+        // Auto-generated mapping from string keys to add<T> calls
+        #define X(TYPE, ALIAS) \
+            if (!matched && key == #ALIAS) { \
+                ForceGlobal::ALIAS::Params p = item.second.cast<ForceGlobal::ALIAS::Params>(); \
+                force->add<ForceGlobal::ALIAS>(system, p); \
+                matched = true; \
+            }
+            EXADIS_FORCE_GLOBAL_LIST
+        #undef X
+
+        // Composite builder
+        if (!matched && key == "FORCE_LONG_FFT_SHORT_ISO") {
+            ForceGlobal::FORCE_FFT::Params p = item.second.cast<ForceGlobal::FORCE_FFT::Params>();
+            force->add_LONG_FFT_SHORT_ISO(system, p);
+            matched = true;
+        }
+
+        if (!matched) {
+            ExaDiS_fatal("Unsupported force key in fparams: %s\n", key.c_str());
+        }
+    }
+    
+    double cutoff = system->neighbor_cutoff; // needed in topology force calculations
+    
+    exadis_delete(system);
+    
+    return ForceBind(force, ForceBind::GLOBAL_MODEL, params, cutoff);
+}
+
 std::vector<Vec3> compute_force_n2(ExaDisNet& disnet, double MU, double NU, double a)
 {
     Params params;
@@ -1113,9 +1152,30 @@ PYBIND11_MODULE(pyexadis, m) {
     py::class_<ForceType::CORE_SELF_PKEXT::Params>(force_core, "Params")
         .def(py::init<double, double>(), py::arg("Ecore")=-1.0, py::arg("Ecore_junc_fact")=1.0);
     
+    // COREMD_SELF_PKEXT
+    py::class_<ForceType::COREMD_SELF_PKEXT, Force> force_coremd(force_m, "COREMD_SELF_PKEXT");
+    py::class_<ForceType::COREMD_SELF_PKEXT::Params>(force_coremd, "Params")
+        .def(py::init<double, int, std::vector<double>, int, std::vector<double>>(),
+             py::arg("rc"), py::arg("porder0"), py::arg("pcoeffs0"), py::arg("porder1"), py::arg("pcoeffs1"));
+    
+    // FORCE_SEGSEG_ISO
+    py::class_<ForceType::FORCE_SEGSEG_ISO, Force> force_segsegiso(force_m, "SEGSEG_ISO");
+    py::class_<ForceType::FORCE_SEGSEG_ISO::Params>(force_segsegiso, "Params")
+        .def(py::init<double>(), py::arg("cutoff"));
+    
+    // FORCE_SEGSEG_ISO_FFT
+    py::class_<ForceSegSegList<SegSegIsoFFT>, Force> force_segsegiso_fft(force_m, "SEGSEG_ISO_FFT");
+    py::class_<ForceSegSegList<SegSegIsoFFT>::Params>(force_segsegiso_fft, "Params")
+        .def(py::init([](double cutoff, double rcgrid) {
+            return new ForceSegSegList<SegSegIsoFFT>::Params(cutoff, SegSegIsoFFT::Params(rcgrid));
+        }), py::arg("cutoff"), py::arg("rcgrid"));
+    
     // ForceFFT
     py::class_<ForceFFT, Force> force_fft(force_m, "ForceFFT");
     py::class_<ForceFFT::Params>(force_fft, "Params")
+        .def(py::init([](int Ngrid) {
+            return new ForceFFT::Params(Ngrid);
+        }), py::arg("Ngrid"))
         .def(py::init([](std::vector<int> Ngrid) {
             return new ForceFFT::Params(Ngrid[0], Ngrid[1], Ngrid[2]);
         }), py::arg("Ngrid"));
@@ -1169,6 +1229,13 @@ PYBIND11_MODULE(pyexadis, m) {
     force_subcycl
         .def_static("make", [](Params& params, ForceType::SUBCYCLING_MODEL::Params& fparams, Cell& cell) {
             return make_force<ForceType::SUBCYCLING_MODEL>(params, fparams, cell);
+        }, py::arg("params"), py::arg("fparams"), py::arg("cell"));
+    
+    // GLOBAL_MODEL
+    py::class_<ForceType::GLOBAL_MODEL, Force> force_global(force_m, "GLOBAL_MODEL");
+    force_global
+        .def_static("make", [](Params& params, py::dict& fparams, Cell& cell) {
+            return make_force_global(params, fparams, cell);
         }, py::arg("params"), py::arg("fparams"), py::arg("cell"));
     
     // ForcePython

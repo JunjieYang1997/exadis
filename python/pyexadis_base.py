@@ -253,6 +253,29 @@ class CalForce:
                                                                    drift=drift, flong_group0=flong_group0)
             self.force = pyexadis.Force.SUBCYCLING_MODEL.make(params=self.params, fparams=subcyclparams, cell=cell)
             
+        elif self.force_mode == 'GLOBAL_MODEL':
+            cell = get_module_arg('CalForce::'+self.force_mode, kwargs, 'cell')
+            if not isinstance(cell, pyexadis.Cell):
+                cell = pyexadis.Cell(h=cell.h, origin=cell.origin, is_periodic=cell.is_periodic)
+            force_list = get_module_arg('CalForce::'+self.force_mode, kwargs, 'force_list')
+            if len(force_list) == 0:
+                raise ValueError("CalForce::GLOBAL_MODEL: empty list of forces")
+            fparams = {}
+            for key, val in force_list.items():
+                if key in ['FORCE_LINE_TENSION', 'FORCE_CORE_SELF_PKEXT']:
+                    fparams[key] = pyexadis.Force.CORE_SELF_PKEXT.Params(**val)
+                elif key == 'FORCE_COREMD_SELF_PKEXT':
+                    fparams[key] = pyexadis.Force.COREMD_SELF_PKEXT.Params(**val)
+                elif key == 'FORCE_SEGSEG_ISO':
+                    fparams[key] = pyexadis.Force.SEGSEG_ISO.Params(**val)
+                elif key == 'FORCE_SEGSEG_ISO_FFT':
+                    fparams[key] = pyexadis.Force.SEGSEG_ISO_FFT.Params(**val)
+                elif key in ['FORCE_LONG_FFT_SHORT_ISO', 'FORCE_FFT']:
+                    fparams[key] = pyexadis.Force.ForceFFT.Params(**val)
+                else:
+                    raise ValueError(f"CalForce::GLOBAL_MODEL: unknown force contribution '{key}'")
+            self.force = pyexadis.Force.GLOBAL_MODEL.make(params=self.params, fparams=fparams, cell=cell)
+            
         else:
             raise ValueError('Unknown force %s' % force_mode)
             

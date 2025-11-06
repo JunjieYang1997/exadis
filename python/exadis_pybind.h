@@ -248,7 +248,7 @@ struct SystemBind : ExaDisNet {
 struct ForceBind {
     enum ForceModel {
         LINE_TENSION_MODEL, CUTOFF_MODEL, DDD_FFT_MODEL, 
-        SUBCYCLING_MODEL, PYTHON_MODEL,
+        SUBCYCLING_MODEL, GLOBAL_MODEL, PYTHON_MODEL,
         FORCE_FFT,
     };
     Force* force = nullptr;
@@ -263,6 +263,8 @@ struct ForceBind {
         ForceFFT* forcefft = nullptr;
         if (model == DDD_FFT_MODEL) {
             forcefft = static_cast<ForceType::DDD_FFT_MODEL*>(force)->get_force2()->get_flong();
+        } else if (model == GLOBAL_MODEL) {
+            forcefft = static_cast<ForceType::GLOBAL_MODEL*>(force)->get<ForceGlobal::FORCE_FFT>();
         } else if (model == FORCE_FFT) {
             forcefft = static_cast<ForceFFT*>(force);
         } else { 

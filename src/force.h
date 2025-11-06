@@ -475,5 +475,6 @@ public:
 #include "force_n2.h"
 #include "force_segseglist.h"
 #include "force_fft.h"
+#include "force_global.h"
 
 #endif
