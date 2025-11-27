@@ -728,3 +728,182 @@ def write_vtk(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True):
         np.savetxt(f, np.vstack((np.zeros(vals.shape[1]), vals)), fmt='%f')
     
     f.close()
+
+def write_vtk_character(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True):
+    """ Write dislocation network in vtk format
+        Junjie: add character angle as cell data to each segment, add also classify the
+        slip plane of each segment. slip plane types: 1. {110} 2. {112} 3. {123} 4. others
+    """ 
+    data = N.export_data()
+    # cell
+    cell = pyexadis.Cell(**data["cell"])
+    cell_origin, cell_center, h = np.array(cell.origin), np.array(cell.center()), np.array(cell.h)
+    c = cell_origin + np.array([np.zeros(3), h[0], h[1], h[2], h[0]+h[1],
+                                h[0]+h[2], h[1]+h[2], h[0]+h[1]+h[2]])
+    # nodes
+    nodes = data.get("nodes")
+    rn = nodes.get("positions")
+    # segments
+    segs = data.get("segs")
+    segsnid = segs.get("nodeids")
+    r1 = np.array(cell.closest_image(Rref=np.array(cell.center()), R=rn[segsnid[:,0]]))
+    r2 = np.array(cell.closest_image(Rref=r1, R=rn[segsnid[:,1]]))
+    b = segs.get("burgers")
+    p = segs.get("planes")
+    
+    # PBC wrapping
+    if np.all(np.array(cell.is_periodic()) == 0): pbc_wrap = False
+    if pbc_wrap:
+        
+        eps = 1e-10
+        hinv = np.linalg.inv(h)
+        is_periodic = np.array(cell.is_periodic())
+        def outside_box(p):
+            s = np.matmul(hinv, p - cell_origin)
+            return np.any(((s < -eps)|(s > 1.0+eps))&(is_periodic))
+        
+        def facet_intersection_position(r1, r2, i):
+            s1 = np.matmul(hinv, r1 - cell_origin)
+            s2 = np.matmul(hinv, r2 - cell_origin)
+            t = s2 - s1
+            t0 = -(s1 - 0.0) / (t + eps)
+            t1 = -(s1 - 1.0) / (t + eps)
+            s = np.hstack((t0, t1))
+            s[s < eps] = 1.0
+            facet = np.argmin(s)
+            if s[facet] < 1.0:
+                pos = np.matmul(h, s1 + s[facet]*t) + cell_origin
+                sfacet = s[facet]
+            else:
+                facet = -1
+                pos = r2
+                sfacet = 1.0
+            return pos, facet, sfacet
+            
+        segsid = []
+        rsegs = []
+        for i in range(segsnid.shape[0]):
+            n1, n2 = segsnid[i]
+            r1 = np.array(cell.closest_image(Rref=cell_center, R=rn[n1]))
+            r2 = np.array(cell.closest_image(Rref=r1, R=rn[n2]))
+            out = outside_box(r2)
+            while out:
+                pos, facet, sfacet = facet_intersection_position(r1, r2, i)
+                if facet < 0: break
+                segsid.append(i)
+                rsegs.append([r1, pos])
+                r1 = pos + (1-2*np.floor(facet/3)) * (1.0-2*eps)*h[:,facet%3]
+                r2 = np.array(cell.closest_image(Rref=r1, R=rn[n2]))
+                out = outside_box(r2)
+            segsid.append(i)
+            rsegs.append([r1, r2])
+        
+        segsid = np.array(segsid).astype(int)
+        nsegs = segsid.shape[0]
+        rsegs = np.array(rsegs).reshape(-1,3)
+        b = b[segsid]
+        p = p[segsid]
+        charactor_angles = []
+        for i in range(nsegs):
+            burg_vec = b[i]
+            line_vec = rsegs[2*i+1] - rsegs[2*i]
+            burg_vec_norm = np.linalg.norm(burg_vec)
+            line_vec_norm = np.linalg.norm(line_vec)
+            cos_theta = np.dot(burg_vec, line_vec) / (burg_vec_norm * line_vec_norm)
+            # make sure the theta is acute
+            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+            theta = np.arccos(cos_theta) * 180.0 / np.pi
+            theta = min(theta, 180.0 - theta)
+            charactor_angles.append(theta)
+        charactor_angles = np.array(charactor_angles)
+
+        slip_plane_types = []
+        for i in range(nsegs):
+            plane_vec = p[i]
+            # normalize the normal vector
+            normal = plane_vec / np.linalg.norm(plane_vec)
+            # convert to approximated integer indices
+            # Find the smallest integer to scale the normal vector
+            abs_normal = np.abs(normal)
+            non_zero = abs_normal[abs_normal > 1e-6]
+            if len(non_zero) == 0:
+                slip_plane_types.append(4)  # others
+                continue
+            scale_factor = 1.0 / np.min(non_zero)
+            scaled_abs_normal = abs_normal * scale_factor
+            int_abs_indices = np.round(scaled_abs_normal).astype(int)
+
+            # Normalize the indices by their greatest common divisor
+            h, k, l = int_abs_indices
+            gcd_value = np.gcd(np.gcd(abs(h), abs(k)), abs(l))
+            if gcd_value > 0:
+                h //= gcd_value
+                k //= gcd_value
+                l //= gcd_value
+
+            # Classify the slip plane type
+            indices = sorted([abs(h), abs(k), abs(l)])
+            if indices == [0,1,1]:
+                slip_plane_types.append(1)  # {110}
+            elif indices == [1,1,2]:
+                slip_plane_types.append(2)  # {112}
+            elif indices == [1,2,3]:    
+                slip_plane_types.append(3)  # {123}
+            else:
+                slip_plane_types.append(4)  # others
+
+
+        for k, v in segprops.items():
+            segprops[k] = v[segsid]
+    else:
+        nsegs = segsnid.shape[0]
+        rsegs = np.hstack((r1, r2)).reshape(-1,3)
+    
+    f = open(vtkfile, 'w')
+    f.write("# vtk DataFile Version 3.0\n")
+    f.write("Configuration exported from OpenDiS\n")
+    f.write("ASCII\n")
+    f.write("DATASET UNSTRUCTURED_GRID\n")
+    
+    f.write("POINTS %d FLOAT\n" % (c.shape[0]+2*nsegs))
+    np.savetxt(f, c, fmt='%f')
+    np.savetxt(f, rsegs, fmt='%f')
+    
+    f.write("CELLS %d %d\n" % (1+nsegs, 9+3*nsegs))
+    f.write("8 0 1 4 2 3 5 7 6\n")
+    nid = np.hstack((2*np.ones((nsegs,1)), np.arange(2*nsegs).reshape(-1,2)+8))
+    np.savetxt(f, nid, fmt='%d')
+    
+    f.write("CELL_TYPES %d\n" % (1+nsegs))
+    f.write("12\n")
+    np.savetxt(f, 4*np.ones(nsegs), fmt='%d')
+    
+    f.write("CELL_DATA %d\n" % (1+nsegs))
+    
+    f.write("VECTORS Burgers FLOAT\n")
+    f.write("%f %f %f\n" % tuple(np.zeros(3)))
+    np.savetxt(f, b, fmt='%f')
+    
+    f.write("VECTORS Planes FLOAT\n")
+    f.write("%f %f %f\n" % tuple(np.zeros(3)))
+    np.savetxt(f, p, fmt='%f')
+
+    f.write("SCALARS Character_Angle FLOAT 1\n")
+    f.write("LOOKUP_TABLE default\n")
+    f.write("%f\n" % 0.0)
+    np.savetxt(f, charactor_angles, fmt='%f')
+
+    f.write("SCALARS Slip_Plane_Type INT 1\n")
+    f.write("LOOKUP_TABLE default\n")
+    f.write("%d\n" % 0)
+    np.savetxt(f, slip_plane_types, fmt='%d')
+    
+    for k, v in segprops.items():
+        vals = np.atleast_2d(v.T).T
+        if vals.shape[0] != nsegs:
+            raise ValueError('segprop value must the same size as the number of segments')
+        f.write("SCALARS %s FLOAT %d\n" % (str(k), vals.shape[1]))
+        f.write("LOOKUP_TABLE default\n")
+        np.savetxt(f, np.vstack((np.zeros(vals.shape[1]), vals)), fmt='%f')
+    
+    f.close()
