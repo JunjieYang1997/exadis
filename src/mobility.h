@@ -117,5 +117,6 @@ void apply_velocity_cap(const double &vmax, const double &vscale, Vec3 &v)
 #include "mobility_fcc0_fric.h"
 #include "mobility_fcc0b.h"
 #include "mobility_bcc_nl.h"
+#include "mobility_bcc0b_temp.h" // Junjie
 
 #endif

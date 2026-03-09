@@ -40,6 +40,7 @@ public:
     double realdt;
     Mat33 dEp, dWp;
     double density;
+    double pstrain; // Junjie
     
     Params params;
     Crystal crystal;

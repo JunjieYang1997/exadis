@@ -369,6 +369,16 @@ class MobilityLaw:
             vmax = kwargs.get('vmax', -1.0)
             mobparams = pyexadis.Mobility_BCC_0B_Params(Medge, Mscrew, Mclimb, Fedge, Fscrew, vmax)
             self.mobility = pyexadis.make_mobility_bcc_0b(params=params, mobparams=mobparams)
+
+        elif self.mobility_law == 'BCC_0B_temp':
+            Mclimb = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mclimb')
+            kT = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'kT')
+            bT = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'bT')
+            Fedge = kwargs.get('Fedge', 0.0)
+            Fscrew = kwargs.get('Fscrew', 0.0)
+            vmax = kwargs.get('vmax', -1.0)
+            mobparams = pyexadis.Mobility_BCC_0B_temp_Params(Mclimb, kT, bT, Fedge, Fscrew, vmax)
+            self.mobility = pyexadis.make_mobility_bcc_0b_temp(params=params, mobparams=mobparams)
             
         elif self.mobility_law == 'BCC_NL':
             tempK = kwargs.get('tempK', 300.0)

@@ -633,6 +633,7 @@ void ExaDiSApp::step(Control& ctrl)
     force->compute(system);
     
     // Mobility calculation
+    system->pstrain = pstrain; // Junjie: update plastic strain in system
     mobility->compute(system);
     
     // Time-integration

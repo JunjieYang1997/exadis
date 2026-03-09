@@ -62,6 +62,7 @@ void System::initialize(Params _params, Crystal _crystal, SerialDisNet *network)
     dWp.zero();
     realdt = 0.0;
     density = network->dislocation_density(params.burgmag);
+    pstrain = 0.0; // Junjie
     
     // Create oprec
     oprec = new OpRec();

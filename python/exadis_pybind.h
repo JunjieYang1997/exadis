@@ -451,6 +451,8 @@ Topology* make_topology_parallel(System* system, Force* force, Mobility* mobilit
     Topology* topology;
     if (strcmp(mobility->name(), "MobilityBCC0b") == 0) {
         topology = new TopologyParallel<F,MobilityType::BCC_0B>(system, force, mobility, topolparams);
+    } else if (strcmp(mobility->name(), "MobilityBCC0b_temp") == 0) {
+        topology = new TopologyParallel<F,MobilityType::BCC_0B_temp>(system, force, mobility, topolparams);
     } else if (strcmp(mobility->name(), "MobilityFCC0") == 0) {
         topology = new TopologyParallel<F,MobilityType::FCC_0>(system, force, mobility, topolparams);
     } else if (strcmp(mobility->name(), "MobilityFCC0_fric") == 0) {
