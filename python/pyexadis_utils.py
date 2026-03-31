@@ -907,3 +907,236 @@ def write_vtk_character(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=Tr
         np.savetxt(f, np.vstack((np.zeros(vals.shape[1]), vals)), fmt='%f')
     
     f.close()
+
+
+# FCC的12个滑移系定义
+# 滑移面 {111} 和滑移方向 <110>
+FCC_SLIP_SYSTEMS = {
+    'planes': np.array([
+        [ 1,  1,  1], [ 1,  1,  1], [ 1,  1,  1],  # (111) 面
+        [-1,  1,  1], [-1,  1,  1], [-1,  1,  1],  # (-111) 面
+        [ 1, -1,  1], [ 1, -1,  1], [ 1, -1,  1],  # (1-11) 面
+        [ 1,  1, -1], [ 1,  1, -1], [ 1,  1, -1],  # (11-1) 面
+    ], dtype=float),#滑移面法向量
+    'directions': np.array([
+        [ 1, -1,  0], [ 1,  0, -1], [ 0,  1, -1],  # (111) 面上的滑移方向
+        [ 1,  1,  0], [ 1,  0, -1], [ 0,  1,  1],  # (-111) 面上的滑移方向
+        [ 1,  1,  0], [ 1,  0,  1], [ 0,  1, -1],  # (1-11) 面上的滑移方向
+        [ 1, -1,  0], [ 1,  0,  1], [ 0,  1,  1],  # (11-1) 面上的滑移方向
+    ], dtype=float)#滑移方向向量
+}
+
+def normalize_vector(v):
+    """归一化向量"""
+    norm = np.linalg.norm(v)
+    if norm < 1e-10:#避免除以零
+        return v
+    return v / norm
+
+def is_parallel(v1, v2, tol=1e-6):
+    """判断两个向量是否平行（包括反平行）"""
+    v1_norm = normalize_vector(v1)#归一化向量1
+    v2_norm = normalize_vector(v2)
+    dot = np.abs(np.dot(v1_norm, v2_norm))#计算两个归一化向量的点积的绝对值
+    return dot > (1.0 - tol)#如果点积接近1，则认为两个向量平行
+
+def identify_fcc_slip_system(burgers, plane, tol=1e-6):
+    """
+    识别是否为FCC标准滑移系
+    
+    Parameters:
+    -----------
+    burgers : array-like, 伯格斯矢量
+    plane : array-like, 滑移面法向量
+    tol : float, 容差
+    
+    Returns:
+    --------
+    int : 12 表示标准FCC滑移系，13 表示其他滑移情况
+    """
+    burgers = np.array(burgers, dtype=float)#将输入转换为浮点型数组
+    plane = np.array(plane, dtype=float)
+    
+    # 检查是否匹配12个FCC滑移系中的任意一个
+    for i in range(12):#遍历12个FCC滑移系
+        fcc_plane = FCC_SLIP_SYSTEMS['planes'][i]#取第 i 个滑移面法向量
+        fcc_dir = FCC_SLIP_SYSTEMS['directions'][i]#取第 i 个滑移方向向量
+        
+        # 检查滑移面和滑移方向是否都匹配
+        if is_parallel(plane, fcc_plane, tol) and is_parallel(burgers, fcc_dir, tol):#判断滑移面和滑移方向是否都匹配
+            return 12
+    
+    return 13
+
+def compute_slip_system_labels(burgers_vectors, plane_vectors, tol=1e-6):
+    """
+    批量计算滑移系标签
+    
+    Parameters:
+    -----------
+    burgers_vectors : ndarray, shape (n, 3), 伯格斯矢量数组
+    plane_vectors : ndarray, shape (n, 3), 滑移面法向量数组
+    tol : float, 容差
+    
+    Returns:
+    --------
+    ndarray : 滑移系标签数组 (12 或 13)
+    """
+    n = burgers_vectors.shape[0]#位错段数量
+    labels = np.zeros(n, dtype=int)#创建长度为 n 的整型数组，初始化为 0
+    
+    for i in range(n):
+        labels[i] = identify_fcc_slip_system(burgers_vectors[i], plane_vectors[i], tol)#计算每个位错段的滑移系标签
+    
+    return labels
+
+
+def write_vtk_fcc(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True, identify_slip_system=True, slip_tol=1e-6):
+    """
+    Write dislocation network in vtk format
+    
+    Parameters:
+    -----------
+    N : DisNetManager, 位错网络管理器
+    vtkfile : str, 输出VTK文件路径
+    segprops : dict, 额外的段属性
+    pbc_wrap : bool, 是否进行周期性边界条件包裹
+    identify_slip_system : bool, 是否识别FCC滑移系 (新增参数)
+    slip_tol : float, 滑移系识别容差 (新增参数)
+    """
+    data = N.export_data()
+    
+    # cell
+    cell = pyexadis.Cell(**data["cell"])#用 data["cell"] 的字段构造一个 Cell 对象（** 解包字典为关键字参数）
+    cell_origin, cell_center, h = np.array(cell.origin), np.array(cell.center()), np.array(cell.h)#取出晶胞原点 origin、中心 center、晶胞矩阵 h，并转成 numpy 数组
+    c = cell_origin + np.array([np.zeros(3), h[0], h[1], h[2], h[0]+h[1],
+                                h[0]+h[2], h[1]+h[2], h[0]+h[1]+h[2]])#计算晶胞8个顶点的坐标  origin + (0, a, b, c, a+b, a+c, b+c, a+b+c)
+    
+    # nodes
+    nodes = data.get("nodes")#取节点数据字典
+    rn = nodes.get("positions")#取节点坐标数组 rn（每个节点一个 3D 坐标）
+    
+    # segments
+    segs = data.get("segs")#取段数据字典
+    segsnid = segs.get("nodeids")#取段的节点索引数组 segsnid（每个段由两个节点索引定义）
+    r1 = np.array(cell.closest_image(Rref=np.array(cell.center()), R=rn[segsnid[:,0]]))#取每段第一个端点的坐标，并映射到“离 cell.center 最近的周期像”
+    r2 = np.array(cell.closest_image(Rref=r1, R=rn[segsnid[:,1]]))#取每段第二个端点的坐标，并映射到“离 r1 最近的周期像”
+    b = segs.get("burgers")#取段的伯格斯矢量数组 b
+    p = segs.get("planes")#取段的滑移面法向量数组 p
+    
+    # PBC wrapping
+    if np.all(np.array(cell.is_periodic()) == 0): pbc_wrap = False#若晶胞三个方向都不是周期的（is_periodic 全为 0），强制关闭 pbc_wrap
+    if pbc_wrap:
+        
+        eps = 1e-10#很小的数，用于避免除 0 与边界判断抖动
+        hinv = np.linalg.inv(h)#计算晶胞矩阵 h 的逆矩阵 hinv
+        is_periodic = np.array(cell.is_periodic())#取周期性标志（每个方向 0/1）
+        
+        def outside_box(p):#判断点 p 是否在晶胞外部
+            s = np.matmul(hinv, p - cell_origin)#计算分数坐标 s，使得 p = origin + h*s（取决于 h 的定义）
+            return np.any(((s < -eps)|(s > 1.0+eps))&(is_periodic))#若在任一“周期方向”上分数坐标超出 [0,1]（留 eps 容差），返回 True
+        
+        def facet_intersection_position(r1, r2, i):#求线段 r1->r2 首次与盒子哪个面相交，以及相交位置
+            s1 = np.matmul(hinv, r1 - cell_origin)
+            s2 = np.matmul(hinv, r2 - cell_origin)
+            t = s2 - s1#分数坐标下的方向向量（参数化用）
+            t0 = -(s1 - 0.0) / (t + eps)#分别计算与 s=0 三个面的交点参数（避免 t=0 用 eps）
+            t1 = -(s1 - 1.0) / (t + eps)#分别计算与 s=1 三个面的交点参数
+            s = np.hstack((t0, t1))#把 6 个候选参数拼成长度 6 的数组（3个“0面”+3个“1面”）
+            s[s < eps] = 1.0#把非常小/负的参数设为 1.0（相当于忽略“不在前方”的交点）
+            facet = np.argmin(s)# 取最小的正参数对应的面 → 即最先撞到的盒子面索引 facet∈[0..5]
+            if s[facet] < 1.0:#如果交点出现在 r1->r2 的线段内部（参数<1）
+                pos = np.matmul(h, s1 + s[facet]*t) + cell_origin#计算交点的笛卡尔坐标：origin + h*(s1 + alpha*t)
+                sfacet = s[facet]#交点参数
+            else:
+                facet = -1#用 -1 表示“没撞到面/无需切割”
+                pos = r2#交点设为 r2（线段终点）
+                sfacet = 1.0
+            return pos, facet, sfacet#返回交点坐标、面索引、交点参数
+            
+        segsid = []#新段列表中每一段对应的“原始段 id”
+        rsegs = []#新段的端点坐标列表（每段存 [r_start, r_end]）
+        for i in range(segsnid.shape[0]):#遍历每一原始段
+            n1, n2 = segsnid[i]#取该段的两个节点 id
+            r1 = np.array(cell.closest_image(Rref=cell_center, R=rn[n1]))# 取端点1坐标并选离盒子中心最近的周期像
+            r2 = np.array(cell.closest_image(Rref=r1, R=rn[n2]))# 取端点2坐标并选离端点1最近的周期像
+            out = outside_box(r2)#判断 r2 是否在盒子外（周期方向）
+            while out:#如果在盒子外，说明该段跨越了周期边界，需要切段
+                pos, facet, sfacet = facet_intersection_position(r1, r2, i)#求从 r1 到 r2 首次撞到盒子边界的位置 pos
+                if facet < 0: break#facet=-1 表示没有可切割的面，退出循环
+                segsid.append(i)#新产生的这一小段来自原始段 i
+                rsegs.append([r1, pos])#把切割出来的这一小段 [r1, pos] 存入新段列表
+                r1 = pos + (1-2*np.floor(facet/3)) * (1.0-2*eps)*h[:,facet%3]#把 r1 “穿越周期边界”跳到对面继续;(1-2*floor(facet/3)) 给出 +1 或 -1 的方向因子
+                r2 = np.array(cell.closest_image(Rref=r1, R=rn[n2]))#重新计算 r2 的最近周期像（现在参考点换成新的 r1）
+                out = outside_box(r2)#再次判断是否还在盒子外：可能一段跨多次周期，需要多次切割
+            segsid.append(i)#退出 while 后，把剩余最后一段也记录下来
+            rsegs.append([r1, r2])#保存最后一段端点：r1 -> r2（此时 r2 应已在盒子内或无需再切）
+        
+        segsid = np.array(segsid).astype(int)#把 segsid 转成整型 numpy 数组
+        nsegs = segsid.shape[0]#新段总数（切割后可能大于原始段数）
+        rsegs = np.array(rsegs).reshape(-1,3)#把新段端点列表转成 numpy 数组，形状 (nsegs*2, 3)
+        b = b[segsid]#根据 segsid 取出新段对应的伯格斯矢量
+        p = p[segsid]#根据 segsid 取出新段对应的滑移面法向量
+        for k, v in segprops.items():#根据 segsid 取出新段对应的其他属性
+            segprops[k] = v[segsid]#更新 segprops 中每个属性的值
+    else:
+        nsegs = segsnid.shape[0]#原始段总数
+        rsegs = np.hstack((r1, r2)).reshape(-1,3)#把原始段端点拼接成形状 (nsegs*2, 3) 的数组
+    
+    # ============================================
+    # 新增：计算FCC滑移系标签
+    # ============================================
+    if identify_slip_system:#如果需要识别滑移系
+        slip_system_labels = compute_slip_system_labels(b, p, tol=slip_tol)#计算每段的滑移系标签（12 或 13）
+    
+    # 写入VTK文件
+    f = open(vtkfile, 'w')#打开输出文件（文本写入）
+    f.write("# vtk DataFile Version 3.0\n")
+    f.write("Configuration exported from OpenDiS\n")
+    f.write("ASCII\n")# 指明是 ASCII（不是二进制）
+    f.write("DATASET UNSTRUCTURED_GRID\n")
+    
+    f.write("POINTS %d FLOAT\n" % (c.shape[0]+2*nsegs))# 写点数量：8 个盒子角点 + 每段 2 个端点
+    np.savetxt(f, c, fmt='%f')#写入晶胞顶点坐标
+    np.savetxt(f, rsegs, fmt='%f')#再把所有段端点坐标写入（共 2*nsegs 行）
+    
+    f.write("CELLS %d %d\n" % (1+nsegs, 9+3*nsegs))# 写单元数量：1 个盒子 + nsegs 段
+    f.write("8 0 1 4 2 3 5 7 6\n")#写盒子单元的连接关系（8个顶点索引） 点数 = 8 顶点索引 = [0,1,4,2,3,5,7,6]
+    nid = np.hstack((2*np.ones((nsegs,1)), np.arange(2*nsegs).reshape(-1,2)+8))#写段单元的连接关系（每段2个端点索引） 点数 = 2 顶点索引 = [段起点索引, 段终点索引]，段起点索引从 8 开始
+    np.savetxt(f, nid, fmt='%d')#写入所有段的连接关系
+    
+    f.write("CELL_TYPES %d\n" % (1+nsegs))# 写单元类型数量
+    f.write("12\n")#盒子单元类型 12 = VTK_HEXAHEDRON
+    np.savetxt(f, 4*np.ones(nsegs), fmt='%d')#段单元类型 4 = VTK_LINE
+    
+    f.write("CELL_DATA %d\n" % (1+nsegs))#声明接下来写的是每个 cell 的数据（总数 1+nsegs）
+    
+    f.write("VECTORS Burgers FLOAT\n")#写入伯格斯矢量数据
+    f.write("%f %f %f\n" % tuple(np.zeros(3)))#给第一个 cell（盒子）写占位向量 0,0,0（因为盒子本身没有 burgers）
+    np.savetxt(f, b, fmt='%f')#写入每段的伯格斯矢量
+    
+    f.write("VECTORS Planes FLOAT\n")#写入滑移面法向量数据
+    f.write("%f %f %f\n" % tuple(np.zeros(3)))#给第一个 cell（盒子）写占位向量 0,0,0
+    np.savetxt(f, p, fmt='%f')#写入每段的滑移面法向量
+    
+    # ============================================
+    # 新增：写入滑移系标签
+    # 12 = 标准FCC滑移系
+    # 13 = 其他滑移情况
+    # ============================================
+    if identify_slip_system:#如果需要识别滑移系
+        f.write("SCALARS SlipSystemType INT 1\n")#声明一个标量场：SlipSystemType，整型，每个 cell 1 个分量
+        f.write("LOOKUP_TABLE default\n")#VTK 标量字段常规写法：指定查找表
+        f.write("0\n")  # cell的占位值
+        np.savetxt(f, slip_system_labels, fmt='%d')#写每条线段的标签（12 或 13）
+    
+    # 写入其他段属性
+    for k, v in segprops.items():#遍历用户传入的额外段属性字典（key=属性名，value=数组）
+        vals = np.atleast_2d(v.T).T#把 v 强制变成二维列向量/二维数组，统一后续写入逻辑
+        if vals.shape[0] != nsegs:#检查：属性长度必须等于段数（切段后的 nsegs）
+            raise ValueError('segprop value must the same size as the number of segments')#不一致就报错，避免写错数据
+        f.write("SCALARS %s FLOAT %d\n" % (str(k), vals.shape[1]))#声明标量场，名称为 k，浮点型，每个 cell vals.shape[1] 个分量
+        f.write("LOOKUP_TABLE default\n")
+        np.savetxt(f, np.vstack((np.zeros(vals.shape[1]), vals)), fmt='%f')#写入数据，第一行是盒子的占位值 0，后面是每段的属性值
+    
+    f.close()
