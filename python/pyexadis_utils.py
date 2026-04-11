@@ -909,6 +909,10 @@ def write_vtk_character(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=Tr
     f.close()
 
 
+import numpy as np
+import pyexadis
+from typing import Dict, Tuple, Optional
+
 # FCC的12个滑移系定义
 # 滑移面 {111} 和滑移方向 <110>
 FCC_SLIP_SYSTEMS = {
@@ -917,32 +921,41 @@ FCC_SLIP_SYSTEMS = {
         [-1,  1,  1], [-1,  1,  1], [-1,  1,  1],  # (-111) 面
         [ 1, -1,  1], [ 1, -1,  1], [ 1, -1,  1],  # (1-11) 面
         [ 1,  1, -1], [ 1,  1, -1], [ 1,  1, -1],  # (11-1) 面
-    ], dtype=float),#滑移面法向量
+    ], dtype=float),  # 滑移面法向量
     'directions': np.array([
         [ 1, -1,  0], [ 1,  0, -1], [ 0,  1, -1],  # (111) 面上的滑移方向
         [ 1,  1,  0], [ 1,  0, -1], [ 0,  1,  1],  # (-111) 面上的滑移方向
         [ 1,  1,  0], [ 1,  0,  1], [ 0,  1, -1],  # (1-11) 面上的滑移方向
         [ 1, -1,  0], [ 1,  0,  1], [ 0,  1,  1],  # (11-1) 面上的滑移方向
-    ], dtype=float)#滑移方向向量
+    ], dtype=float),  # 滑移方向向量
+    'names': [
+        '(111)[1-10]',   '(111)[10-1]',   '(111)[01-1]',   # 滑移系 1-3
+        '(-111)[110]',   '(-111)[10-1]',  '(-111)[011]',   # 滑移系 4-6
+        '(1-11)[110]',   '(1-11)[101]',   '(1-11)[01-1]',  # 滑移系 7-9
+        '(11-1)[1-10]',  '(11-1)[101]',   '(11-1)[011]',   # 滑移系 10-12
+    ]
 }
+
 
 def normalize_vector(v):
     """归一化向量"""
     norm = np.linalg.norm(v)
-    if norm < 1e-10:#避免除以零
+    if norm < 1e-10:  # 避免除以零
         return v
     return v / norm
 
+
 def is_parallel(v1, v2, tol=1e-6):
     """判断两个向量是否平行（包括反平行）"""
-    v1_norm = normalize_vector(v1)#归一化向量1
-    v2_norm = normalize_vector(v2)
-    dot = np.abs(np.dot(v1_norm, v2_norm))#计算两个归一化向量的点积的绝对值
-    return dot > (1.0 - tol)#如果点积接近1，则认为两个向量平行
+    v1_norm = normalize_vector(v1)  # 归一化向量1
+    v2_norm = normalize_vector(v2)  # 归一化向量2
+    dot = np.abs(np.dot(v1_norm, v2_norm))  # 计算两个归一化向量的点积的绝对值
+    return dot > (1.0 - tol)  # 如果点积接近1，则认为两个向量平行
+
 
 def identify_fcc_slip_system(burgers, plane, tol=1e-6):
     """
-    识别是否为FCC标准滑移系
+    识别FCC滑移系，返回具体的滑移系编号
     
     Parameters:
     -----------
@@ -952,48 +965,81 @@ def identify_fcc_slip_system(burgers, plane, tol=1e-6):
     
     Returns:
     --------
-    int : 12 表示标准FCC滑移系，13 表示其他滑移情况
+    int : 1-12 表示对应的FCC滑移系编号，13 表示其他滑移情况
     """
-    burgers = np.array(burgers, dtype=float)#将输入转换为浮点型数组
+    burgers = np.array(burgers, dtype=float)
     plane = np.array(plane, dtype=float)
     
     # 检查是否匹配12个FCC滑移系中的任意一个
-    for i in range(12):#遍历12个FCC滑移系
-        fcc_plane = FCC_SLIP_SYSTEMS['planes'][i]#取第 i 个滑移面法向量
-        fcc_dir = FCC_SLIP_SYSTEMS['directions'][i]#取第 i 个滑移方向向量
+    for i in range(12):
+        fcc_plane = FCC_SLIP_SYSTEMS['planes'][i]
+        fcc_dir = FCC_SLIP_SYSTEMS['directions'][i]
         
         # 检查滑移面和滑移方向是否都匹配
-        if is_parallel(plane, fcc_plane, tol) and is_parallel(burgers, fcc_dir, tol):#判断滑移面和滑移方向是否都匹配
-            return 12
+        if is_parallel(plane, fcc_plane, tol) and is_parallel(burgers, fcc_dir, tol):
+            return i + 1  # 返回滑移系编号 1-12
     
-    return 13
+    return 13  # 不属于标准12个滑移系
 
-def compute_slip_system_labels(burgers_vectors, plane_vectors, tol=1e-6):
+
+def compute_angle_burgers_line(burgers, line_vector):
     """
-    批量计算滑移系标签
+    计算伯格斯矢量与位错线段的夹角（度数）
+    
+    Parameters:
+    -----------
+    burgers : array-like, 伯格斯矢量
+    line_vector : array-like, 位错线段方向向量
+    
+    Returns:
+    --------
+    float : 夹角（度数，范围 0-90度）
+    """
+    b_norm = normalize_vector(burgers)
+    l_norm = normalize_vector(line_vector)#归一化位错线向量
+    
+    # 计算夹角的余弦值
+    cos_angle = np.abs(np.dot(b_norm, l_norm))  # 取绝对值，使角度在0-90度范围内
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)  # 防止数值误差导致超出[-1,1] np.clip 函数将数组中的值限制在指定的范围内，这里是为了防止由于数值误差导致的余弦值超出 [-1, 1] 的范围，从而避免在计算反余弦时出现错误。
+    
+    # 转换为角度
+    angle_rad = np.arccos(cos_angle)#计算夹角的弧度值
+    angle_deg = np.degrees(angle_rad)#转换为度数
+    
+    return angle_deg
+
+
+def compute_slip_system_labels_and_angles(burgers_vectors, plane_vectors, line_vectors, tol=1e-6):
+    """
+    批量计算滑移系标签和伯格斯矢量与位错线段的夹角
     
     Parameters:
     -----------
     burgers_vectors : ndarray, shape (n, 3), 伯格斯矢量数组
     plane_vectors : ndarray, shape (n, 3), 滑移面法向量数组
+    line_vectors : ndarray, shape (n, 3), 位错线段方向向量数组
     tol : float, 容差
     
     Returns:
     --------
-    ndarray : 滑移系标签数组 (12 或 13)
+    labels : ndarray, 滑移系标签数组 (1-12 或 13)
+    angles : ndarray, 伯格斯矢量与位错线段夹角数组（度数）
     """
     n = burgers_vectors.shape[0]#位错段数量
-    labels = np.zeros(n, dtype=int)#创建长度为 n 的整型数组，初始化为 0
+    labels = np.zeros(n, dtype=int)#滑移系标签数组
+    angles = np.zeros(n, dtype=float)#夹角数组
     
-    for i in range(n):
-        labels[i] = identify_fcc_slip_system(burgers_vectors[i], plane_vectors[i], tol)#计算每个位错段的滑移系标签
+    for i in range(n):#遍历每个位错段
+        labels[i] = identify_fcc_slip_system(burgers_vectors[i], plane_vectors[i], tol)
+        angles[i] = compute_angle_burgers_line(burgers_vectors[i], line_vectors[i])
     
-    return labels
+    return labels, angles
 
 
-def write_vtk_fcc(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True, identify_slip_system=True, slip_tol=1e-6):
+def write_vtk_fcc(N, vtkfile: str, segprops={}, pbc_wrap=True, 
+                  identify_slip_system=True, slip_tol=1e-6, verbose=True):
     """
-    Write dislocation network in vtk format
+    Write dislocation network in vtk format with FCC slip system identification
     
     Parameters:
     -----------
@@ -1001,8 +1047,9 @@ def write_vtk_fcc(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True, id
     vtkfile : str, 输出VTK文件路径
     segprops : dict, 额外的段属性
     pbc_wrap : bool, 是否进行周期性边界条件包裹
-    identify_slip_system : bool, 是否识别FCC滑移系 (新增参数)
-    slip_tol : float, 滑移系识别容差 (新增参数)
+    identify_slip_system : bool, 是否识别FCC滑移系
+    slip_tol : float, 滑移系识别容差
+    verbose : bool, 是否打印统计信息
     """
     data = N.export_data()
     
@@ -1025,9 +1072,10 @@ def write_vtk_fcc(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True, id
     p = segs.get("planes")#取段的滑移面法向量数组 p
     
     # PBC wrapping
-    if np.all(np.array(cell.is_periodic()) == 0): pbc_wrap = False#若晶胞三个方向都不是周期的（is_periodic 全为 0），强制关闭 pbc_wrap
-    if pbc_wrap:
+    if np.all(np.array(cell.is_periodic()) == 0): #若晶胞三个方向都不是周期的（is_periodic 全为 0），强制关闭 pbc_wrap
+        pbc_wrap = False
         
+    if pbc_wrap:
         eps = 1e-10#很小的数，用于避免除 0 与边界判断抖动
         hinv = np.linalg.inv(h)#计算晶胞矩阵 h 的逆矩阵 hinv
         is_periodic = np.array(cell.is_periodic())#取周期性标志（每个方向 0/1）
@@ -1082,61 +1130,160 @@ def write_vtk_fcc(N: DisNetManager, vtkfile: str, segprops={}, pbc_wrap=True, id
     else:
         nsegs = segsnid.shape[0]#原始段总数
         rsegs = np.hstack((r1, r2)).reshape(-1,3)#把原始段端点拼接成形状 (nsegs*2, 3) 的数组
+        segsid = np.arange(nsegs)
     
     # ============================================
-    # 新增：计算FCC滑移系标签
+    # 计算位错线段方向向量
     # ============================================
-    if identify_slip_system:#如果需要识别滑移系
-        slip_system_labels = compute_slip_system_labels(b, p, tol=slip_tol)#计算每段的滑移系标签（12 或 13）
-    
-    # 写入VTK文件
-    f = open(vtkfile, 'w')#打开输出文件（文本写入）
-    f.write("# vtk DataFile Version 3.0\n")
-    f.write("Configuration exported from OpenDiS\n")
-    f.write("ASCII\n")# 指明是 ASCII（不是二进制）
-    f.write("DATASET UNSTRUCTURED_GRID\n")
-    
-    f.write("POINTS %d FLOAT\n" % (c.shape[0]+2*nsegs))# 写点数量：8 个盒子角点 + 每段 2 个端点
-    np.savetxt(f, c, fmt='%f')#写入晶胞顶点坐标
-    np.savetxt(f, rsegs, fmt='%f')#再把所有段端点坐标写入（共 2*nsegs 行）
-    
-    f.write("CELLS %d %d\n" % (1+nsegs, 9+3*nsegs))# 写单元数量：1 个盒子 + nsegs 段
-    f.write("8 0 1 4 2 3 5 7 6\n")#写盒子单元的连接关系（8个顶点索引） 点数 = 8 顶点索引 = [0,1,4,2,3,5,7,6]
-    nid = np.hstack((2*np.ones((nsegs,1)), np.arange(2*nsegs).reshape(-1,2)+8))#写段单元的连接关系（每段2个端点索引） 点数 = 2 顶点索引 = [段起点索引, 段终点索引]，段起点索引从 8 开始
-    np.savetxt(f, nid, fmt='%d')#写入所有段的连接关系
-    
-    f.write("CELL_TYPES %d\n" % (1+nsegs))# 写单元类型数量
-    f.write("12\n")#盒子单元类型 12 = VTK_HEXAHEDRON
-    np.savetxt(f, 4*np.ones(nsegs), fmt='%d')#段单元类型 4 = VTK_LINE
-    
-    f.write("CELL_DATA %d\n" % (1+nsegs))#声明接下来写的是每个 cell 的数据（总数 1+nsegs）
-    
-    f.write("VECTORS Burgers FLOAT\n")#写入伯格斯矢量数据
-    f.write("%f %f %f\n" % tuple(np.zeros(3)))#给第一个 cell（盒子）写占位向量 0,0,0（因为盒子本身没有 burgers）
-    np.savetxt(f, b, fmt='%f')#写入每段的伯格斯矢量
-    
-    f.write("VECTORS Planes FLOAT\n")#写入滑移面法向量数据
-    f.write("%f %f %f\n" % tuple(np.zeros(3)))#给第一个 cell（盒子）写占位向量 0,0,0
-    np.savetxt(f, p, fmt='%f')#写入每段的滑移面法向量
+    line_vectors = rsegs[1::2] - rsegs[0::2]  # 每段的方向向量 = r2 - r1
     
     # ============================================
-    # 新增：写入滑移系标签
-    # 12 = 标准FCC滑移系
-    # 13 = 其他滑移情况
+    # 计算FCC滑移系标签和伯格斯矢量与位错线段的夹角
     # ============================================
-    if identify_slip_system:#如果需要识别滑移系
-        f.write("SCALARS SlipSystemType INT 1\n")#声明一个标量场：SlipSystemType，整型，每个 cell 1 个分量
-        f.write("LOOKUP_TABLE default\n")#VTK 标量字段常规写法：指定查找表
-        f.write("0\n")  # cell的占位值
-        np.savetxt(f, slip_system_labels, fmt='%d')#写每条线段的标签（12 或 13）
+    if identify_slip_system:
+        slip_system_labels, burgers_line_angles = compute_slip_system_labels_and_angles(
+            b, p, line_vectors, tol=slip_tol
+        )
     
-    # 写入其他段属性
-    for k, v in segprops.items():#遍历用户传入的额外段属性字典（key=属性名，value=数组）
-        vals = np.atleast_2d(v.T).T#把 v 强制变成二维列向量/二维数组，统一后续写入逻辑
-        if vals.shape[0] != nsegs:#检查：属性长度必须等于段数（切段后的 nsegs）
-            raise ValueError('segprop value must the same size as the number of segments')#不一致就报错，避免写错数据
-        f.write("SCALARS %s FLOAT %d\n" % (str(k), vals.shape[1]))#声明标量场，名称为 k，浮点型，每个 cell vals.shape[1] 个分量
-        f.write("LOOKUP_TABLE default\n")
-        np.savetxt(f, np.vstack((np.zeros(vals.shape[1]), vals)), fmt='%f')#写入数据，第一行是盒子的占位值 0，后面是每段的属性值
+    # ============================================
+    # 写入VTK文件 (使用with语句确保文件正确关闭)
+    # ============================================
+    with open(vtkfile, 'w') as f:
+        # VTK文件头
+        f.write("# vtk DataFile Version 3.0\n")
+        f.write("Dislocation Network with FCC Slip System Analysis\n")
+        f.write("ASCII\n")
+        f.write("DATASET UNSTRUCTURED_GRID\n")#指定数据集类型为非结构化网格
+        
+        # ============================================
+        # 写入点坐标 (POINTS)
+        # ============================================
+        total_points = c.shape[0] + 2*nsegs#总点数 = 8个晶胞顶点 + 每段2个端点
+        f.write("POINTS %d double\n" % total_points)
+        
+        # 写入晶胞顶点
+        for point in c:
+            f.write("%.10e %.10e %.10e\n" % (point[0], point[1], point[2]))#格式化输出，保留10位小数
+        
+        # 写入位错线段端点
+        for point in rsegs:#rsegs 已经是 (nsegs*2, 3) 的数组
+            f.write("%.10e %.10e %.10e\n" % (point[0], point[1], point[2]))
+        
+        # ============================================
+        # 写入单元连接关系 (CELLS)
+        # ============================================
+        total_cells = 1 + nsegs  # 1个晶胞 + nsegs条线段
+        cell_list_size = 9 + 3*nsegs  # 晶胞: 9 (1+8), 线段: 3*nsegs (每段3个数)
+        f.write("\nCELLS %d %d\n" % (total_cells, cell_list_size))
+        
+        # 晶胞单元 (HEXAHEDRON, 8个顶点)
+        f.write("8 0 1 4 2 3 5 7 6\n")
+        
+        # 位错线段单元 (LINE, 每段2个顶点)
+        offset = c.shape[0]  # 线段顶点从第8个点开始
+        for i in range(nsegs):#遍历每一段
+            p1 = offset + 2*i
+            p2 = offset + 2*i + 1
+            f.write("2 %d %d\n" % (p1, p2))
+        
+        # ============================================
+        # 写入单元类型 (CELL_TYPES)
+        # ============================================
+        f.write("\nCELL_TYPES %d\n" % total_cells)
+        f.write("12\n")  # 晶胞类型: VTK_HEXAHEDRON = 12
+        for i in range(nsegs):
+            f.write("3\n")  # 线段类型: VTK_LINE = 3
+        
+        # ============================================
+        # 写入单元数据 (CELL_DATA)
+        # ============================================
+        f.write("\nCELL_DATA %d\n" % total_cells)
+        
+        # --------------------------------------------
+        # 1. 伯格斯矢量 (VECTORS)
+        # --------------------------------------------
+        f.write("\nVECTORS Burgers double\n")
+        f.write("0.0 0.0 0.0\n")  # 晶胞的占位值
+        for vec in b:
+            f.write("%.10e %.10e %.10e\n" % (vec[0], vec[1], vec[2]))
+        
+        # --------------------------------------------
+        # 2. 滑移面法向量 (VECTORS)
+        # --------------------------------------------
+        f.write("\nVECTORS Planes double\n")
+        f.write("0.0 0.0 0.0\n")  # 晶胞的占位值
+        for vec in p:
+            f.write("%.10e %.10e %.10e\n" % (vec[0], vec[1], vec[2]))
+        
+        # --------------------------------------------
+        # 3. 位错线段方向向量 (VECTORS) - 新增
+        # --------------------------------------------
+        f.write("\nVECTORS LineDirection double\n")
+        f.write("0.0 0.0 0.0\n")  # 晶胞的占位值
+        for vec in line_vectors:
+            vec_norm = normalize_vector(vec)
+            f.write("%.10e %.10e %.10e\n" % (vec_norm[0], vec_norm[1], vec_norm[2]))
+        
+        # ============================================
+        # 4. 滑移系标签 (SCALARS) - 整型
+        # ============================================
+        if identify_slip_system:
+            f.write("\nSCALARS SlipSystemID int 1\n")
+            f.write("LOOKUP_TABLE default\n")
+            f.write("0\n")  # 晶胞的占位值
+            for label in slip_system_labels:
+                f.write("%d\n" % label)
+            
+            # ============================================
+            # 5. 伯格斯矢量与位错线段夹角 (SCALARS) - 浮点型
+            # ============================================
+            f.write("\nSCALARS BurgersLineAngle double 1\n")
+            f.write("LOOKUP_TABLE default\n")
+            f.write("0.0\n")  # 晶胞的占位值
+            for angle in burgers_line_angles:
+                f.write("%.10e\n" % angle)
+            
+            # ============================================
+            # 6. 位错类型分类 (SCALARS) - 整型
+            # 0 = 螺型 (0-30度), 1 = 混合 (30-60度), 2 = 刃型 (60-90度)
+            # ============================================
+            f.write("\nSCALARS DislocationCharacter int 1\n")
+            f.write("LOOKUP_TABLE default\n")
+            f.write("0\n")  # 晶胞的占位值
+            for angle in burgers_line_angles:
+                if angle < 30.0:
+                    char_type = 0  # 螺型
+                elif angle < 60.0:
+                    char_type = 1  # 混合
+                else:
+                    char_type = 2  # 刃型
+                f.write("%d\n" % char_type)
+        
+        # ============================================
+        # 7. 写入其他段属性
+        # ============================================
+        for k, v in segprops.items():#遍历其他段属性
+            vals = np.atleast_2d(v.T).T#把 v 强制变成二维列向量/二维数组，统一后续写入逻辑
+            if vals.shape[0] != nsegs:#检查：属性长度必须等于段数（切段后的 nsegs）
+                raise ValueError(f'segprop "{k}" must have the same size as the number of segments')#不一致就报错，避免写错数据
+            
+            # 判断数据类型,判断属性数据是整数还是浮点数，并写入相应的VTK标量头。
+            if np.issubdtype(vals.dtype, np.integer):#整数类型
+                f.write("\nSCALARS %s int %d\n" % (str(k), vals.shape[1]))#写入 SCALARS 头
+            else:
+                f.write("\nSCALARS %s double %d\n" % (str(k), vals.shape[1]))
+            
+            f.write("LOOKUP_TABLE default\n")#声明使用默认的颜色查找表（Color Lookup Table）。
+            
+            # 晶胞占位值
+            for j in range(vals.shape[1]):#遍历每一列
+                f.write("0 " if j < vals.shape[1]-1 else "0\n")#写入晶胞占位值
+            
+            # 段属性值
+            for row in vals:#遍历每一行
+                for j, val in enumerate(row):# 遍历每一列（每个分量）
+                    if j < len(row)-1:
+                        f.write("%.10e " % val)# 非最后一列，加空格
+                    else:
+                        f.write("%.10e\n" % val)# 最后一列，加换行
     
-    f.close()
