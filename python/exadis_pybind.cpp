@@ -1091,8 +1091,8 @@ PYBIND11_MODULE(pyexadis, m) {
     py::class_<MobilityType::BCC_0B::Params>(m, "Mobility_BCC_0B_Params")
         .def(py::init<double, double, double, double, double, double>(), py::arg("Medge"), py::arg("Mscrew"),
         py::arg("Mclimb"), py::arg("Fedge")=0.0, py::arg("Fscrew")=0.0, py::arg("vmax")=-1.0);
-    py::class_<MobilityType::BCC_0B_temp::Params>(m, "Mobility_BCC_0B_temp_Params")
-        .def(py::init<double, double, double, double, double, double>(), py::arg("Mclimb"), py::arg("kT"), 
+    py::class_<MobilityType::BCC_0B_temp::Params>(m, "Mobility_BCC_0B_temp_Params")//目的是为了测试温度相关的BCC 0B模型，参数列表和BCC_0B一样
+        .def(py::init<double, double, double, double, double, double>(), py::arg("Mclimb"), py::arg("kT"), //设置了温度参数kT，但在模型中暂时没有使用，目的是为了测试温度相关的BCC 0B模型
         py::arg("bT"), py::arg("Fedge")=0.0, py::arg("Fscrew")=0.0, py::arg("vmax")=-1.0);
     py::class_<MobilityType::BCC_NL::Params>(m, "Mobility_BCC_NL_Params")
         .def(py::init<double, double, double, double, double, double>(), py::arg("tempK"), py::arg("vmax"),
@@ -1280,7 +1280,7 @@ PYBIND11_MODULE(pyexadis, m) {
           py::arg("params"), py::arg("mobparams"));
     m.def("make_mobility_bcc_0b", &make_mobility<MobilityType::BCC_0B>, "Instantiate a BCC_0B mobility law",
           py::arg("params"), py::arg("mobparams"));
-    m.def("make_mobility_bcc_0b_temp", &make_mobility<MobilityType::BCC_0B_temp>, "Instantiate a BCC_0B_temp mobility law",
+    m.def("make_mobility_bcc_0b_temp", &make_mobility<MobilityType::BCC_0B_temp>, "Instantiate a BCC_0B_temp mobility law",//目的是为了测试温度相关的BCC 0B模型，参数列表和BCC_0B一样
           py::arg("params"), py::arg("mobparams"));
     m.def("make_mobility_bcc_nl", &make_mobility<MobilityType::BCC_NL>, "Instantiate a BCC_NL mobility law",
           py::arg("params"), py::arg("mobparams"));

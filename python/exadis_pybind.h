@@ -452,7 +452,7 @@ Topology* make_topology_parallel(System* system, Force* force, Mobility* mobilit
     if (strcmp(mobility->name(), "MobilityBCC0b") == 0) {
         topology = new TopologyParallel<F,MobilityType::BCC_0B>(system, force, mobility, topolparams);
     } else if (strcmp(mobility->name(), "MobilityBCC0b_temp") == 0) {
-        topology = new TopologyParallel<F,MobilityType::BCC_0B_temp>(system, force, mobility, topolparams);
+        topology = new TopologyParallel<F,MobilityType::BCC_0B_temp>(system, force, mobility, topolparams);//根据mobility的类型选择不同的TopologyParallel模板实例化，创建一个TopologyParallel对象，并将其赋值给topology指针返回
     } else if (strcmp(mobility->name(), "MobilityFCC0") == 0) {
         topology = new TopologyParallel<F,MobilityType::FCC_0>(system, force, mobility, topolparams);
     } else if (strcmp(mobility->name(), "MobilityFCC0_fric") == 0) {
