@@ -343,36 +343,36 @@ class CalForcePython:
         return self.force.OneNodeForce(N, self.state, tag)
 
 
-class MobilityLaw:#迁移率
+class MobilityLaw:
     """MobilityLaw: wrapper class for mobility laws
     """
-    def __init__(self, state: dict, mobility_law: str='SimpleGlide', **kwargs) -> None:#迁移率模型为SimpleGlide
+    def __init__(self, state: dict, mobility_law: str='SimpleGlide', **kwargs) -> None:
         self.mobility_law = mobility_law
         params = get_exadis_params(state)
         
-        if self.mobility_law in ['SimpleGlide', 'GLIDE']:#如果迁移率模型为SimpleGlide或者GLIDE
-            Medge = kwargs.get('Medge', -1.0)#刃位错的迁移率，-1.0是一个默认值，表示如果没有提供这个参数，就使用-1.0
+        if self.mobility_law in ['SimpleGlide', 'GLIDE']:
+            Medge = kwargs.get('Medge', -1.0)
             Mscrew = kwargs.get('Mscrew', -1.0)
             if Medge > 0.0 and Mscrew > 0.0:
-                mobparams = pyexadis.Mobility_GLIDE_Params(Medge, Mscrew)#如果刃位错与螺位错的迁移率都大于0，则使用提供的迁移率参数来创建Mobility_GLIDE_Params对象
+                mobparams = pyexadis.Mobility_GLIDE_Params(Medge, Mscrew)
             else:
-                mob = kwargs.get('mob', 1.0)#如果没有提供mob参数，则默认为1.0，表示迁移率的一个默认值
-                mobparams = pyexadis.Mobility_GLIDE_Params(mob)#如果刃位错或螺位错的迁移率没有提供或不大于0，则使用mob参数来创建Mobility_GLIDE_Params对象，这个参数可以看作是一个整体的迁移率值，适用于所有类型的位错
-            self.mobility = pyexadis.make_mobility_glide(params=params, mobparams=mobparams)#使用提供的参数和迁移率参数来创建一个GLIDE迁移率对象，并将其赋值给self.mobility属性，以便在后续的计算中使用这个迁移率模型
+                mob = kwargs.get('mob', 1.0)
+                mobparams = pyexadis.Mobility_GLIDE_Params(mob)
+            self.mobility = pyexadis.make_mobility_glide(params=params, mobparams=mobparams)
             
-        elif self.mobility_law == 'BCC_0B':#如果迁移率模型为BCC_0B
-            Medge = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Medge')#获取刃位错的迁移率参数，如果没有提供这个参数，则抛出一个KeyError异常，提示缺少这个参数
+        elif self.mobility_law == 'BCC_0B':
+            Medge = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Medge')
             Mscrew = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mscrew')
             Mclimb = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mclimb')
-            Fedge = kwargs.get('Fedge', 0.0)#获取刃位错的临界力参数，如果没有提供这个参数，则默认为0.0，表示没有临界力
+            Fedge = kwargs.get('Fedge', 0.0)
             Fscrew = kwargs.get('Fscrew', 0.0)
-            vmax = kwargs.get('vmax', -1.0)#获取最大迁移率参数，如果没有提供这个参数，则默认为-1.0，表示没有最大迁移率限制
-            mobparams = pyexadis.Mobility_BCC_0B_Params(Medge, Mscrew, Mclimb, Fedge, Fscrew, vmax)#使用提供的迁移率参数和临界力参数来创建一个Mobility_BCC_0B_Params对象，这个对象包含了BCC_0B迁移率模型所需的所有参数
+            vmax = kwargs.get('vmax', -1.0)
+            mobparams = pyexadis.Mobility_BCC_0B_Params(Medge, Mscrew, Mclimb, Fedge, Fscrew, vmax)
             self.mobility = pyexadis.make_mobility_bcc_0b(params=params, mobparams=mobparams)
 
         elif self.mobility_law == 'BCC_0B_temp':
             Mclimb = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mclimb')
-            kT = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'kT')#获取温度参数，如果没有提供这个参数，则抛出一个KeyError异常，提示缺少这个参数
+            kT = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'kT')
             bT = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'bT')
             Fedge = kwargs.get('Fedge', 0.0)
             Fscrew = kwargs.get('Fscrew', 0.0)
@@ -381,12 +381,12 @@ class MobilityLaw:#迁移率
             self.mobility = pyexadis.make_mobility_bcc_0b_temp(params=params, mobparams=mobparams)
             
         elif self.mobility_law == 'BCC_NL':
-            tempK = kwargs.get('tempK', 300.0)#获取温度参数，如果没有提供这个参数，则默认为300.0K，表示室温
+            tempK = kwargs.get('tempK', 300.0)
             vmax = kwargs.get('vmax', -1.0)
-            Peierls = kwargs.get('Peierls', 1.2e9)#获取Peierls应力参数，如果没有提供这个参数，则默认为1.2e9Pa，表示铁的Peierls应力
-            Bscrew = kwargs.get('Bscrew', 4.6e-4)#获取螺位错的拖曳系数参数，如果没有提供这个参数，则默认为4.6e-4Pa.s，表示铁的螺位错拖曳系数
-            B0edge = kwargs.get('B0edge', 0.0)#获取刃位错的拖曳系数参数，如果没有提供这个参数，则默认为0.0，表示没有刃位错拖曳系数
-            B1edge = kwargs.get('B1edge', 7.7e-7)#获取刃位错的拖曳系数参数，如果没有提供这个参数，则默认为7.7e-7Pa.s，表示铁的刃位错拖曳系数
+            Peierls = kwargs.get('Peierls', 1.2e9)
+            Bscrew = kwargs.get('Bscrew', 4.6e-4)
+            B0edge = kwargs.get('B0edge', 0.0)
+            B1edge = kwargs.get('B1edge', 7.7e-7)
             mobparams = pyexadis.Mobility_BCC_NL_Params(tempK, vmax, Peierls, Bscrew, B0edge, B1edge)
             self.mobility = pyexadis.make_mobility_bcc_nl(params=params, mobparams=mobparams)
             
@@ -403,9 +403,9 @@ class MobilityLaw:#迁移率
             Fedge = kwargs.get('Fedge', 0.0)
             Fscrew = kwargs.get('Fscrew', 0.0)
             vmax = kwargs.get('vmax', -1.0)
-            mobility_field = kwargs.get('mobility_field', "")#获取迁移率场参数，如果没有提供这个参数，则默认为空字符串，表示没有迁移率场依赖
-            friction_field = kwargs.get('friction_field', "")#获取摩擦力场参数，如果没有提供这个参数，则默认为空字符串，表示没有摩擦力场依赖
-            Fscale = kwargs.get('Fscale', 1.0)#获取摩擦力缩放参数，如果没有提供这个参数，则默认为1.0，表示摩擦力不进行缩放
+            mobility_field = kwargs.get('mobility_field', "")
+            friction_field = kwargs.get('friction_field', "")
+            Fscale = kwargs.get('Fscale', 1.0)
             mobparams = pyexadis.Mobility_FCC_0_FRIC_Params(Medge, Mscrew, Fedge, Fscrew, vmax,
                                                             mobility_field, friction_field, Fscale)
             self.mobility = pyexadis.make_mobility_fcc_0_fric(params=params, mobparams=mobparams)
@@ -414,7 +414,7 @@ class MobilityLaw:#迁移率
             Medge = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Medge')
             Mscrew = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mscrew')
             Mclimb = get_module_arg('MobilityLaw::'+self.mobility_law, kwargs, 'Mclimb')
-            Mclimbjunc = kwargs.get('Mclimbjunc', -1.0)#获取结位错的攀移迁移率参数，如果没有提供这个参数，则默认为-1.0，表示结位错的攀移迁移率与普通攀移迁移率相同
+            Mclimbjunc = kwargs.get('Mclimbjunc', -1.0)
             vmax = kwargs.get('vmax', -1.0)
             mobparams = pyexadis.Mobility_FCC_0B_Params(Medge, Mscrew, Mclimb, Mclimbjunc, vmax)
             self.mobility = pyexadis.make_mobility_fcc_0b(params=params, mobparams=mobparams)
@@ -422,7 +422,7 @@ class MobilityLaw:#迁移率
         else:
             raise ValueError('Unknown mobility law %s' % mobility_law)
         
-    def Mobility(self, N: DisNetManager, state: dict) -> dict:#计算位错网络中每个节点的速度
+    def Mobility(self, N: DisNetManager, state: dict) -> dict:
         G = N.get_disnet(ExaDisNet)
         f = state["nodeforces"]
         nodetags = state.get("nodeforcetags", np.empty((0,2)))
