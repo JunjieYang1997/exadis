@@ -157,7 +157,7 @@ struct Crystal : CrystalParams
             
             // Habit planes
             if (num_bcc_plane_families <= 0)
-                num_bcc_plane_families = 2; // default
+                num_bcc_plane_families = 2; // default 默认值为2，表示BCC晶体的交滑移涉及{110}和{112}两个平面族
             int num_glissile_planes;
             if (num_bcc_plane_families == 1) num_glissile_planes = 3; // only {110} planes
             else if (num_bcc_plane_families == 2) num_glissile_planes = 3+3; // {110} and {112} planes
