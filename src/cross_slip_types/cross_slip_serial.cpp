@@ -47,7 +47,7 @@ namespace ExaDiS {
 void CrossSlipSerial::handle(System* system)
 {
     Kokkos::fence();
-    system->timer[system->TIMER_CROSSSLIP].start();
+    system->timer[system->TIMER_CROSSSLIP].start();//在处理交滑移事件之前，首先进行一些检查和初始化操作，包括检查晶体类型和滑移平面选项是否满足要求，计算一些与交滑移事件相关的参数，以及获取当前活跃的网络实例
     
     if (system->crystal.type != FCC_CRYSTAL && system->crystal.type != BCC_CRYSTAL)
         ExaDiS_fatal("Error: CrossSlipSerial only implemented for FCC and BCC crystals\n");
@@ -56,7 +56,7 @@ void CrossSlipSerial::handle(System* system)
         ExaDiS_fatal("Error: CrossSlipSerial requires use_glide_planes option\n");
     
     double eps = 1e-6;
-    double thetacrit = 0.0;
+    double thetacrit = 0.0;//定义一个小的阈值eps，用于判断某些物理量是否接近于零，以及定义一个临界角度thetacrit，根据系统的晶体类型来设置它的值，分别为2度和0.5度，并计算它的正弦值的平方，以便后续判断线段是否接近于螺旋位错
     if (system->crystal.type == FCC_CRYSTAL)
         thetacrit = 2.0 / 180.0 * M_PI;
     else if (system->crystal.type == BCC_CRYSTAL)
@@ -179,7 +179,7 @@ void CrossSlipSerial::handle(System* system)
                 //                 [ 1 -1 -2 ]
                 // Use Burgers vectors in crystal frame to generate initial glide
                 // planes in crystal frame.
-                numGlideDir = 2;
+                numGlideDir = 2;//交滑移滑移方向的数量为2，分别对应于两个可能的滑移平面
                 double tmp = 1.0;
                 for (int j = 0; j < 3; j++) {
                     if (fabs(burgCrystal[j]) > eps) {
@@ -200,7 +200,7 @@ void CrossSlipSerial::handle(System* system)
                 // Find which glide planes the segments are on. Initial
                 // glidedir array contains glide directions in crystal frame
                 // For BCC geometry burgCrystal should be of <1 1 1> type
-                numGlideDir = 3;
+                numGlideDir = 3;//交滑移滑移方向的数量为3，分别对应于三个可能的滑移平面
                 Mat33 tmp33 = outer(burgCrystal, burgCrystal);
                 for (int m = 0; m < 3; m++)
                     for (int n = 0; n < 3; n++)

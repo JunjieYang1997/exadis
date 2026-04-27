@@ -35,7 +35,7 @@ public:
     void handle(System* system);
     
     const char* name() { return "CrossSlipSerial"; }
-};
+};//定义一个类CrossSlipSerial，继承自CrossSlip，包含一个指向Force类型的指针作为成员变量，并实现了构造函数和handle函数，以及一个返回类名的name函数,这就是一个表头文件，具体的实现细节在对应的源文件cross_slip_serial.cpp中
 
 } // namespace ExaDiS
 
