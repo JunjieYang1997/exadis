@@ -30,21 +30,20 @@ private:
     Force* force;
 
 public:
-    // BCC 热激活交滑移参数（无非施密特修正）
-    // 温度随塑性应变升高：T = kT * pstrain + bT，与 MobilityBCC0b_temp 完全一致
+    // 热激活交滑移参数，需由调用方显式传入
     struct BCCCrossSlipParams {
-        double kT          = 0.0;    // 升温斜率 [K/strain]，与 mobility 的 kT 相同
-        double bT          = 300.0;  // 初始温度 [K]，与 mobility 的 bT 相同
-        double delta_H_cs  = 1.63;   // 零应力激活焓 [eV]
-        double tau_P_cs    = 960e6;  // 交滑移面 Peierls 应力 [Pa]
-        double p_shape     = 0.86;   // Peierls 势形状参数 p
-        double q_shape     = 1.69;   // Peierls 势形状参数 q
-        double delta_S_cs  = 0.0;    // 激活熵 [eV/K]
-        double omega_D     = 1e13;   // Debye 频率 [s^-1]
-        double eps_dot_sim = 1e4;    // 模拟应变率 [s^-1]
-        double eps_dot_exp = 1e-3;   // 实验应变率 [s^-1]
-        double L0_ref      = 1e-6;   // 参考位错长度 [m]
-        double tau_f_cs    = 50e6;   // 交滑移面摩擦应力 [Pa]
+        double kT          = 0.0;  // 升温斜率 [K/strain]
+        double bT          = 0.0;  // 初始温度 [K]
+        double delta_H_cs  = 0.0;  // 零应力激活焓 [eV]
+        double tau_P_cs    = 0.0;  // 交滑移面 Peierls 应力 [Pa]
+        double p_shape     = 0.0;  // Peierls 势形状参数 p
+        double q_shape     = 0.0;  // Peierls 势形状参数 q
+        double delta_S_cs  = 0.0;  // 激活熵 [eV/K]
+        double omega_D     = 0.0;  // Debye 频率 [s^-1]
+        double eps_dot_sim = 0.0;  // 模拟应变率 [s^-1]
+        double eps_dot_exp = 0.0;  // 实验应变率 [s^-1]
+        double L0_ref      = 0.0;  // 参考位错长度 [m]
+        double tau_f_cs    = 0.0;  // 交滑移面摩擦应力 [Pa]
     };
     BCCCrossSlipParams bcc_params;
 
