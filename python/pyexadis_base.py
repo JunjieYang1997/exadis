@@ -665,15 +665,45 @@ class Remesh:
 
 class CrossSlip:
     """CrossSlip: wrapper class for cross-slip operations
+
+    For BCC thermal cross-slip (cross_slip_mode='ForceBasedSerial'), extra kwargs:
+        tempK       : temperature [K] (default 300.0)
+        delta_H_cs  : zero-stress activation enthalpy [eV] (default 1.63)
+        tau_P_cs    : Peierls stress on cross-slip plane [Pa] (default 960e6)
+        p_shape     : Peierls potential shape param p (default 0.86)
+        q_shape     : Peierls potential shape param q (default 1.69)
+        delta_S_cs  : activation entropy [eV/K] (default 0.0)
+        omega_D     : Debye frequency [s^-1] (default 1e13)
+        eps_dot_sim : simulation strain rate [s^-1] (default 1e4)
+        eps_dot_exp : experimental strain rate [s^-1] (default 1e-3)
+        L0_ref      : reference dislocation length [m] (default 1e-6)
+        tau_f_cs    : friction stress on cross-slip plane [Pa] (default 50e6)
     """
     def __init__(self, state: dict, cross_slip_mode: str='ForceBasedParallel', **kwargs) -> None:
         self.cross_slip_mode = cross_slip_mode
         params = get_exadis_params(state)
-        
+
         force_module = get_module_arg('CrossSlip::'+self.cross_slip_mode, kwargs, 'force')
         force, self.force_python = get_exadis_force(force_module, state, params)
-        
-        self.cross_slip = pyexadis.make_cross_slip(cross_slip_mode, params=params, force=force)
+
+        if cross_slip_mode == 'ForceBasedSerial':
+            bcc_p = pyexadis.CrossSlipSerial_BCCParams()
+            bcc_p.kT          = kwargs.get('kT',          0.0)
+            bcc_p.bT          = kwargs.get('bT',          300.0)
+            bcc_p.delta_H_cs  = kwargs.get('delta_H_cs',  1.63)
+            bcc_p.tau_P_cs    = kwargs.get('tau_P_cs',    960e6)
+            bcc_p.p_shape     = kwargs.get('p_shape',     0.86)
+            bcc_p.q_shape     = kwargs.get('q_shape',     1.69)
+            bcc_p.delta_S_cs  = kwargs.get('delta_S_cs',  0.0)
+            bcc_p.omega_D     = kwargs.get('omega_D',     1e13)
+            bcc_p.eps_dot_sim = kwargs.get('eps_dot_sim', 1e4)
+            bcc_p.eps_dot_exp = kwargs.get('eps_dot_exp', 1e-3)
+            bcc_p.L0_ref      = kwargs.get('L0_ref',      1e-6)
+            bcc_p.tau_f_cs    = kwargs.get('tau_f_cs',    50e6)
+            self.cross_slip = pyexadis.make_cross_slip(cross_slip_mode, params=params,
+                                                        force=force, bcc_params=bcc_p)
+        else:
+            self.cross_slip = pyexadis.make_cross_slip(cross_slip_mode, params=params, force=force)
         
     def Handle(self, N: DisNetManager, state: dict) -> None:
         G = N.get_disnet(ExaDisNet)

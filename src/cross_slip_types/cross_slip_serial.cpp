@@ -60,7 +60,7 @@ void CrossSlipSerial::handle(System* system)
     if (system->crystal.type == FCC_CRYSTAL)
         thetacrit = 2.0 / 180.0 * M_PI;
     else if (system->crystal.type == BCC_CRYSTAL)
-        thetacrit = 0.5 / 180.0 * M_PI;
+        thetacrit = 15.0 / 180.0 * M_PI;  // BCC: 螺旋判据阈值 15°，与热激活频率模型一致
     double sthetacrit = sin(thetacrit);
     double s2thetacrit = sthetacrit * sthetacrit;
     double shearModulus = system->params.MU;
@@ -239,12 +239,45 @@ void CrossSlipSerial::handle(System* system)
                 fplane = (fabs(tmp3C[j]) > fabs(tmp3C[fplane])) ? j : fplane;
             }
             
-            // Calculate the new plane in the lab frame
+            // BCC: 热激活频率判据（无非施密特修正）
+            // T = kT * pstrain + bT，与 MobilityBCC0b_temp 升温机制完全一致
+            // f = omega_a * (L/L0) * exp(-deltaG / kBT)，触发条件: f >= 1
+            bool bcc_bothseg_ok = false;
+            if (system->crystal.type == BCC_CRYSTAL && bothseg_are_screw && (plane1 == plane2)) {
+                double T = bcc_params.kT * system->pstrain + bcc_params.bT;
+                double L_avg = 0.5 * (L1 + L2);
+                Vec3 n_glide = cross(burg, glideDirLab[plane1]).normalized();
+                double tau_glide = dot(burg, system->extstress * n_glide);
+                double best_freq = 1.0;
+                int best_plane = -1;
+                for (int j = 0; j < numGlideDir; j++) {
+                    if (j == plane1) continue;
+                    Vec3 n_j = cross(burg, glideDirLab[j]).normalized();
+                    double tau_cs = dot(burg, system->extstress * n_j);
+                    if (tau_cs < tau_glide || tau_cs < bcc_params.tau_f_cs) continue;
+                    double ratio = tau_cs / bcc_params.tau_P_cs;
+                    double dG = 0.0;
+                    if (ratio < 1.0) {
+                        dG = bcc_params.delta_H_cs
+                             * pow(1.0 - pow(ratio, bcc_params.p_shape), bcc_params.q_shape)
+                             - T * bcc_params.delta_S_cs;
+                        dG = fmax(dG, 0.0);
+                    }
+                    double omega_a = (bcc_params.eps_dot_sim / bcc_params.eps_dot_exp) * bcc_params.omega_D;
+                    double freq = omega_a * (L_avg / bcc_params.L0_ref)
+                                  * exp(-dG / (8.617e-5 * T));
+                    if (freq > best_freq) { best_freq = freq; best_plane = j; }
+                }
+                if (best_plane >= 0) { fplane = best_plane; bcc_bothseg_ok = true; }
+            }
+
             Vec3 newplane = cross(burg, glideDirLab[fplane]).normalized();
-            
-            if (bothseg_are_screw && (plane1 == plane2) && (plane1 != fplane) &&
-                (fabs(tmp3C[fplane]) > (weightFactor*fabs(tmp3C[plane1])+fnodeThreshold))) {
-                
+
+            if (bcc_bothseg_ok ||
+                (system->crystal.type != BCC_CRYSTAL &&
+                 bothseg_are_screw && (plane1 == plane2) && (plane1 != fplane) &&
+                 (fabs(tmp3C[fplane]) > (weightFactor*fabs(tmp3C[plane1])+fnodeThreshold)))) {
+
                 // Both segments are close to screw and the average direction
                 // is close to screw.
                 

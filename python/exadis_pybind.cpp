@@ -798,7 +798,8 @@ void remesh(ExaDisNet& disnet, RemeshBind& remeshbind)
  *    Cross-slip binding
  *
  *-------------------------------------------------------------------------*/
-CrossSlipBind make_cross_slip(std::string cross_slip_mode, Params& params, ForceBind& forcebind)
+CrossSlipBind make_cross_slip(std::string cross_slip_mode, Params& params, ForceBind& forcebind,
+                               CrossSlipSerial::BCCCrossSlipParams bcc_params = CrossSlipSerial::BCCCrossSlipParams())
 {
     System* system = make_system(new SerialDisNet(), Crystal(params.crystal), params);
     
@@ -818,8 +819,8 @@ CrossSlipBind make_cross_slip(std::string cross_slip_mode, Params& params, Force
         } else {
             ExaDiS_fatal("Error: invalid force type for TopologyParallel binding\n");
         }
-    } else if (cross_slip_mode == "ForceBasedSerial") {  
-        crossslip = new CrossSlipSerial(system, force);
+    } else if (cross_slip_mode == "ForceBasedSerial") {
+        crossslip = new CrossSlipSerial(system, force, bcc_params);
     } else if (cross_slip_mode == "None") { 
         crossslip = new CrossSlip(system);
     } else {
@@ -1345,11 +1346,27 @@ PYBIND11_MODULE(pyexadis, m) {
           py::arg("net"), py::arg("remesh"));
     
     // Cross-slip
+    py::class_<CrossSlipSerial::BCCCrossSlipParams>(m, "CrossSlipSerial_BCCParams")
+        .def(py::init<>())
+        .def_readwrite("kT",          &CrossSlipSerial::BCCCrossSlipParams::kT)
+        .def_readwrite("bT",          &CrossSlipSerial::BCCCrossSlipParams::bT)
+        .def_readwrite("delta_H_cs",  &CrossSlipSerial::BCCCrossSlipParams::delta_H_cs)
+        .def_readwrite("tau_P_cs",    &CrossSlipSerial::BCCCrossSlipParams::tau_P_cs)
+        .def_readwrite("p_shape",     &CrossSlipSerial::BCCCrossSlipParams::p_shape)
+        .def_readwrite("q_shape",     &CrossSlipSerial::BCCCrossSlipParams::q_shape)
+        .def_readwrite("delta_S_cs",  &CrossSlipSerial::BCCCrossSlipParams::delta_S_cs)
+        .def_readwrite("omega_D",     &CrossSlipSerial::BCCCrossSlipParams::omega_D)
+        .def_readwrite("eps_dot_sim", &CrossSlipSerial::BCCCrossSlipParams::eps_dot_sim)
+        .def_readwrite("eps_dot_exp", &CrossSlipSerial::BCCCrossSlipParams::eps_dot_exp)
+        .def_readwrite("L0_ref",      &CrossSlipSerial::BCCCrossSlipParams::L0_ref)
+        .def_readwrite("tau_f_cs",    &CrossSlipSerial::BCCCrossSlipParams::tau_f_cs);
+
     py::class_<CrossSlipBind>(m, "CrossSlip")
         .def(py::init<>())
         .def("handle", &CrossSlipBind::handle, "Handle cross-slip operations of the system");
     m.def("make_cross_slip", &make_cross_slip, "Instantiate a cross-slip class",
-          py::arg("cross_slip_mode"), py::arg("params"), py::arg("force"));
+          py::arg("cross_slip_mode"), py::arg("params"), py::arg("force"),
+          py::arg("bcc_params") = CrossSlipSerial::BCCCrossSlipParams());
     m.def("handle_cross_slip", &handle_cross_slip, "Wrapper to handle cross-slip operations",
           py::arg("net"), py::arg("cross_slip"));
 
