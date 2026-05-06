@@ -112,7 +112,7 @@ struct MobilityBCC0b_temp
     {
         // Junjie: Helper function to compute Bedge as a function of pstrain (temperature)
         // Adjustable parameters
-        double A = 1.8804e-5;
+        double A = 1e-7;//改为-7
 
         // Derived parameters
         double Tm = 1589 + 273.15; // Melting temperature Tm = 1589 C per the experiment
